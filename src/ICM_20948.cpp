@@ -1820,17 +1820,9 @@ ICM_20948_Status_e ICM_20948::magWhoIAm(void)
 }
 
 
-class ICM_20948_I2CDEV : public ICM_20948
-{
-private:
-protected:
-public:
-  I2CWrapper _i2c_wrapper;
-  ICM_20948_Serif_t _serif;
-
-  ICM_20948_I2CDEV(int i2c_bus, int i2c_address): _i2c_wrapper(i2c_bus, i2c_address) {
-    _serif = _i2c_wrapper.get_serif();
-    _device._serif = &_serif;
+ICM_20948_I2CDEV::ICM_20948_I2CDEV(int i2c_bus, int i2c_address): _i2c_wrapper(i2c_bus, i2c_address) {
+  _serif = _i2c_wrapper.get_serif();
+  _device._serif = &_serif;
 
 #if defined(ICM_20948_USE_DMP)
   _device._dmp_firmware_available = true; // Initialize _dmp_firmware_available
@@ -1847,6 +1839,5 @@ public:
   _device._enabled_Android_1 = 0;      // Keep track of which Android sensors are enabled: 32-
   _device._enabled_Android_intr_0 = 0; // Keep track of which Android sensor interrupts are enabled: 0-31
   _device._enabled_Android_intr_1 = 0; // Keep track of which Android sensor interrupts are enabled: 32-
-  }
-};
+}
 

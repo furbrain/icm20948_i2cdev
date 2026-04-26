@@ -9,7 +9,7 @@ A C++ interface to the ICM-20948
 #include <iostream>
 #include "util/ICM_20948_C.h" // The C backbone. ICM_20948_USE_DMP is defined in here.
 #include "util/AK09916_REGISTERS.h"
-
+#include "i2c_wrapper.hpp"
 
 // Base
 class ICM_20948
@@ -212,9 +212,14 @@ public:
 };
 
 // I2C
+class ICM_20948_I2CDEV : public ICM_20948
+{
+private:
+protected:
+  I2CWrapper _i2c_wrapper;
+  ICM_20948_Serif_t _serif;
+public:
 
-// Forward declarations of TwoWire and Wire for board/variant combinations that don't have a default 'SPI'
-//class TwoWire; // Commented by PaulZC 21/2/8 - this was causing compilation to fail on the Arduino NANO 33 BLE
-//extern TwoWire Wire; // Commented by PaulZC 21/2/8 - this was causing compilation to fail on the Arduino NANO 33 BLE
-
+  ICM_20948_I2CDEV(int i2c_bus, int i2c_address);
+};
 #endif
