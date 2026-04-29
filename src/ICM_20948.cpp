@@ -1,5 +1,6 @@
 #include <unistd.h>
 #include "ICM_20948.h"
+#include "ICM_20948_ENUMERATIONS.h"
 #include "i2c_wrapper.hpp"
 #include "util/ICM_20948_REGISTERS.h"
 #include "util/AK09916_REGISTERS.h"
@@ -1439,7 +1440,9 @@ ICM_20948_Status_e ICM_20948::setGyroSF(unsigned char div, int gyro_level)
 // Combine all of the DMP start-up code from the earlier DMP examples
 // This function is defined as __attribute__((weak)) so you can overwrite it if you want to,
 //   e.g. to modify the sample rate
-ICM_20948_Status_e ICM_20948::initializeDMP(void)
+ICM_20948_Status_e ICM_20948::initializeDMP(
+  ICM_20948_ACCEL_CONFIG_FS_SEL_e acc_fss, 
+  ICM_20948_GYRO_CONFIG_1_FS_SEL_e gyr_fss)
 {
   // First, let's check if the DMP is available
   if (_device._dmp_firmware_available != true)
@@ -1528,12 +1531,12 @@ ICM_20948_Status_e ICM_20948::initializeDMP(void)
   // Set Gyro FSR (Full scale range) to 2000dps through GYRO_CONFIG_1
   // Set Accel FSR (Full scale range) to 4g through ACCEL_CONFIG
   ICM_20948_fss_t myFSS; // This uses a "Full Scale Settings" structure that can contain values for all configurable sensors
-  myFSS.a = gpm4;        // (ICM_20948_ACCEL_CONFIG_FS_SEL_e)
+  myFSS.a = acc_fss;        // (ICM_20948_ACCEL_CONFIG_FS_SEL_e)
                          // gpm2
                          // gpm4
                          // gpm8
                          // gpm16
-  myFSS.g = dps2000;     // (ICM_20948_GYRO_CONFIG_1_FS_SEL_e)
+  myFSS.g = gyr_fss;     // (ICM_20948_GYRO_CONFIG_1_FS_SEL_e)
                          // dps250
                          // dps500
                          // dps1000
@@ -1566,12 +1569,15 @@ ICM_20948_Status_e ICM_20948::initializeDMP(void)
   // Set gyro sample rate divider with GYRO_SMPLRT_DIV
   // Set accel sample rate divider with ACCEL_SMPLRT_DIV_2
   ICM_20948_smplrt_t mySmplrt;
-  mySmplrt.g = 19; // ODR is computed as follows: 1.1 kHz/(1+GYRO_SMPLRT_DIV[7:0]). 19 = 55Hz. InvenSense Nucleo example uses 19 (0x13).
-  mySmplrt.a = 19; // ODR is computed as follows: 1.125 kHz/(1+ACCEL_SMPLRT_DIV[11:0]). 19 = 56.25Hz. InvenSense Nucleo example uses 19 (0x13).
+  
+  mySmplrt.g = 4; // ODR is computed as follows: 1.1 kHz/(1+GYRO_SMPLRT_DIV[7:0]). 4 = 225Hz. InvenSense Nucleo example uses 19 (0x13).
+  mySmplrt.a = 4; // ODR is computed as follows: 1.125 kHz/(1+ACCEL_SMPLRT_DIV[11:0]). 4 = 225 ishHz. InvenSense Nucleo example uses 19 (0x13).
   //mySmplrt.g = 4; // 225Hz
   //mySmplrt.a = 4; // 225Hz
   //mySmplrt.g = 8; // 112Hz
   //mySmplrt.a = 8; // 112Hz
+  //mySmplrt.g = 19; // 55Hz
+  //mySmplrt.a = 19; // 56.25Hz
   result = setSampleRate((ICM_20948_Internal_Acc | ICM_20948_Internal_Gyr), mySmplrt); if (result > worstResult) worstResult = result;
 
   // Setup DMP start address through PRGM_STRT_ADDRH/PRGM_STRT_ADDRL
@@ -1593,13 +1599,33 @@ ICM_20948_Status_e ICM_20948::initializeDMP(void)
   uint8_t fifoPrio = 0xE4;
   result = write(AGB0_REG_SINGLE_FIFO_PRIORITY_SEL, &fifoPrio, 1); if (result > worstResult) worstResult = result;
 
+  uint8_t scaler, scaler_inv;
+  switch (acc_fss)
+  {
+    case gpm2:
+      scaler = 0x02;
+      scaler_inv = 0x08;
+      break;
+    case gpm4:
+      scaler = 0x04;
+      scaler_inv = 0x04;
+      break;
+    case gpm8:
+      scaler = 0x08;
+      scaler_inv = 0x02;
+      break;
+    case gpm16:
+      scaler = 0x10;
+      scaler_inv = 0x01;
+      break;
+  }
   // Configure Accel scaling to DMP
   // The DMP scales accel raw data internally to align 1g as 2^25
   // In order to align internal accel raw data 2^25 = 1g write 0x04000000 when FSR is 4g
-  const unsigned char accScale[4] = {0x04, 0x00, 0x00, 0x00};
+  const unsigned char accScale[4] = {scaler, 0x00, 0x00, 0x00};
   result = writeDMPmems(ACC_SCALE, 4, &accScale[0]); if (result > worstResult) worstResult = result; // Write accScale to ACC_SCALE DMP register
   // In order to output hardware unit data as configured FSR write 0x00040000 when FSR is 4g
-  const unsigned char accScale2[4] = {0x00, 0x04, 0x00, 0x00};
+  const unsigned char accScale2[4] = {0x00, scaler_inv, 0x00, 0x00};
   result = writeDMPmems(ACC_SCALE2, 4, &accScale2[0]); if (result > worstResult) worstResult = result; // Write accScale2 to ACC_SCALE2 DMP register
 
   // Configure Compass mount matrix and scale to DMP
@@ -1641,32 +1667,48 @@ ICM_20948_Status_e ICM_20948::initializeDMP(void)
   // @param[in] gyro_div Value written to GYRO_SMPLRT_DIV register, where
   //            0=1125Hz sample rate, 1=562.5Hz sample rate, ... 4=225Hz sample rate, ...
   //            10=102.2727Hz sample rate, ... etc.
-  // @param[in] gyro_level 0=250 dps, 1=500 dps, 2=1000 dps, 3=2000 dps
-  result = setGyroSF(19, 3); if (result > worstResult) worstResult = result; // 19 = 55Hz (see above), 3 = 2000dps (see above)
+  // @param[in] gyro_level 0=250 dps, 1=500 dps, 2=1000 dps, 3=2000 dps - but this is actually ignored by the DMP firmware, which always uses 2000dps. So we can set it to 3 (2000dps) regardless of the gyro FSR we set above!
+
+  result = setGyroSF(4, 3); if (result > worstResult) worstResult = result; // 19 = 55Hz (see above), 3 = 2000dps (see above)
 
   // Configure the Gyro full scale
   // 2000dps : 2^28
   // 1000dps : 2^27
   //  500dps : 2^26
   //  250dps : 2^25
-  const unsigned char gyroFullScale[4] = {0x10, 0x00, 0x00, 0x00}; // 2000dps : 2^28
+  switch (gyr_fss)
+  {
+    case dps250:
+      scaler = 0x02;
+      break;
+    case dps500:
+      scaler = 0x04;
+      break;
+    case dps1000:
+      scaler = 0x08;
+      break;
+    case dps2000:
+      scaler = 0x10;
+      break;
+  }
+  const unsigned char gyroFullScale[4] = {scaler, 0x00, 0x00, 0x00}; // 2000dps : 2^28
   result = writeDMPmems(GYRO_FULLSCALE, 4, &gyroFullScale[0]); if (result > worstResult) worstResult = result;
 
   // Configure the Accel Only Gain: 15252014 (225Hz) 30504029 (112Hz) 61117001 (56Hz)
-  const unsigned char accelOnlyGain[4] = {0x03, 0xA4, 0x92, 0x49}; // 56Hz
-  //const unsigned char accelOnlyGain[4] = {0x00, 0xE8, 0xBA, 0x2E}; // 225Hz
+  //const unsigned char accelOnlyGain[4] = {0x03, 0xA4, 0x92, 0x49}; // 56Hz
+  const unsigned char accelOnlyGain[4] = {0x00, 0xE8, 0xBA, 0x2E}; // 225Hz
   //const unsigned char accelOnlyGain[4] = {0x01, 0xD1, 0x74, 0x5D}; // 112Hz
   result = writeDMPmems(ACCEL_ONLY_GAIN, 4, &accelOnlyGain[0]); if (result > worstResult) worstResult = result;
 
   // Configure the Accel Alpha Var: 1026019965 (225Hz) 977872018 (112Hz) 882002213 (56Hz)
-  const unsigned char accelAlphaVar[4] = {0x34, 0x92, 0x49, 0x25}; // 56Hz
-  //const unsigned char accelAlphaVar[4] = {0x3D, 0x27, 0xD2, 0x7D}; // 225Hz
+  //const unsigned char accelAlphaVar[4] = {0x34, 0x92, 0x49, 0x25}; // 56Hz
+  const unsigned char accelAlphaVar[4] = {0x3D, 0x27, 0xD2, 0x7D}; // 225Hz
   //const unsigned char accelAlphaVar[4] = {0x3A, 0x49, 0x24, 0x92}; // 112Hz
   result = writeDMPmems(ACCEL_ALPHA_VAR, 4, &accelAlphaVar[0]); if (result > worstResult) worstResult = result;
 
   // Configure the Accel A Var: 47721859 (225Hz) 95869806 (112Hz) 191739611 (56Hz)
-  const unsigned char accelAVar[4] = {0x0B, 0x6D, 0xB6, 0xDB}; // 56Hz
-  //const unsigned char accelAVar[4] = {0x02, 0xD8, 0x2D, 0x83}; // 225Hz
+  //const unsigned char accelAVar[4] = {0x0B, 0x6D, 0xB6, 0xDB}; // 56Hz
+  const unsigned char accelAVar[4] = {0x02, 0xD8, 0x2D, 0x83}; // 225Hz
   //const unsigned char accelAVar[4] = {0x05, 0xB6, 0xDB, 0x6E}; // 112Hz
   result = writeDMPmems(ACCEL_A_VAR, 4, &accelAVar[0]); if (result > worstResult) worstResult = result;
 
@@ -1838,6 +1880,14 @@ ICM_20948_I2CDEV::ICM_20948_I2CDEV(int i2c_bus, int i2c_address): _i2c_wrapper(i
   _device._enabled_Android_0 = 0;      // Keep track of which Android sensors are enabled: 0-31
   _device._enabled_Android_1 = 0;      // Keep track of which Android sensors are enabled: 32-
   _device._enabled_Android_intr_0 = 0; // Keep track of which Android sensor interrupts are enabled: 0-31
-  _device._enabled_Android_intr_1 = 0; // Keep track of which Android sensor interrupts are enabled: 32-
+  _device._enabled_Android_intr_1 = 0; // Keep track of which Android sensor interrupts are enabled: 32-  
+  status = startupDefault(_device._dmp_firmware_available);
+  if (status != ICM_20948_Stat_Ok)
+  {
+    debugPrint("ICM_20948_I2C::begin: startupDefault returned: ");
+    debugPrintStatus(status);
+    debugPrintln("");
+  }
+
 }
 

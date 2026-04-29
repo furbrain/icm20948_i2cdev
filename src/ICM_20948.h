@@ -208,7 +208,9 @@ public:
   ICM_20948_Status_e setDMPODRrate(enum DMP_ODR_Registers odr_reg, int interval);
   ICM_20948_Status_e readDMPdataFromFIFO(icm_20948_DMP_data_t *data);
   ICM_20948_Status_e setGyroSF(unsigned char div, int gyro_level);
-  ICM_20948_Status_e initializeDMP(void) __attribute__((weak)); // Combine all of the DMP start-up code in one place. Can be overwritten if required
+  ICM_20948_Status_e initializeDMP(
+    ICM_20948_ACCEL_CONFIG_FS_SEL_e acc_fss = gpm4, 
+    ICM_20948_GYRO_CONFIG_1_FS_SEL_e gyr_fss = dps2000) __attribute__((weak)); // Combine all of the DMP start-up code in one place. Can be overwritten if required
 };
 
 // I2C
