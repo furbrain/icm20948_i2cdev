@@ -1,4 +1,5 @@
 #include <unistd.h>
+#include "AK09916_ENUMERATIONS.h"
 #include "ICM_20948.h"
 #include "ICM_20948_ENUMERATIONS.h"
 #include "i2c_wrapper.hpp"
@@ -1135,7 +1136,7 @@ ICM_20948_Status_e ICM_20948::startupDefault(bool minimal)
     status = retval;
     return status;
   }
-  usleep(50000); // 50 ms delay after reset (see issue #8)
+  usleep(100000); // 100 ms delay after reset (see issue #8)
 
   retval = sleep(false);
   if (retval != ICM_20948_Stat_Ok)
@@ -1481,7 +1482,9 @@ ICM_20948_Status_e ICM_20948::initializeDMP(
   // false: clear the I2C_SLV0_CTRL I2C_SLV0_REG_DIS (we want to write the register value)
   // true: set the I2C_SLV0_CTRL I2C_SLV0_GRP bit to show the register pairing starts at byte 1+2 (copied from inv_icm20948_resume_akm)
   // true: set the I2C_SLV0_CTRL I2C_SLV0_BYTE_SW to byte-swap the data from the mag (copied from inv_icm20948_resume_akm)
+
   result = i2cControllerConfigurePeripheral(0, MAG_AK09916_I2C_ADDR, AK09916_REG_RSV2, 10, true, true, false, true, true); if (result > worstResult) worstResult = result;
+  
   //
   // We also need to set up I2C_SLV1 to do the Single Measurement triggering:
   // 1: use I2C_SLV1
@@ -1494,6 +1497,7 @@ ICM_20948_Status_e ICM_20948::initializeDMP(
   // false: clear the I2C_SLV0_CTRL I2C_SLV0_GRP bit
   // false: clear the I2C_SLV0_CTRL I2C_SLV0_BYTE_SW bit
   // AK09916_mode_single: tell I2C_SLV1 to write the Single Measurement command each sample
+  
   result = i2cControllerConfigurePeripheral(1, MAG_AK09916_I2C_ADDR, AK09916_REG_CNTL2, 1, false, true, false, false, false, AK09916_mode_single); if (result > worstResult) worstResult = result;
 
   // Set the I2C Master ODR configuration
@@ -1570,14 +1574,12 @@ ICM_20948_Status_e ICM_20948::initializeDMP(
   // Set accel sample rate divider with ACCEL_SMPLRT_DIV_2
   ICM_20948_smplrt_t mySmplrt;
   
-  mySmplrt.g = 4; // ODR is computed as follows: 1.1 kHz/(1+GYRO_SMPLRT_DIV[7:0]). 4 = 225Hz. InvenSense Nucleo example uses 19 (0x13).
-  mySmplrt.a = 4; // ODR is computed as follows: 1.125 kHz/(1+ACCEL_SMPLRT_DIV[11:0]). 4 = 225 ishHz. InvenSense Nucleo example uses 19 (0x13).
   //mySmplrt.g = 4; // 225Hz
   //mySmplrt.a = 4; // 225Hz
   //mySmplrt.g = 8; // 112Hz
   //mySmplrt.a = 8; // 112Hz
-  //mySmplrt.g = 19; // 55Hz
-  //mySmplrt.a = 19; // 56.25Hz
+  mySmplrt.g = 19; // 55Hz
+  mySmplrt.a = 19; // 56.25Hz
   result = setSampleRate((ICM_20948_Internal_Acc | ICM_20948_Internal_Gyr), mySmplrt); if (result > worstResult) worstResult = result;
 
   // Setup DMP start address through PRGM_STRT_ADDRH/PRGM_STRT_ADDRL
@@ -1669,7 +1671,7 @@ ICM_20948_Status_e ICM_20948::initializeDMP(
   //            10=102.2727Hz sample rate, ... etc.
   // @param[in] gyro_level 0=250 dps, 1=500 dps, 2=1000 dps, 3=2000 dps - but this is actually ignored by the DMP firmware, which always uses 2000dps. So we can set it to 3 (2000dps) regardless of the gyro FSR we set above!
 
-  result = setGyroSF(4, 3); if (result > worstResult) worstResult = result; // 19 = 55Hz (see above), 3 = 2000dps (see above)
+  result = setGyroSF(19, 3); if (result > worstResult) worstResult = result; // 19 = 55Hz (see above), 3 = 2000dps (see above)
 
   // Configure the Gyro full scale
   // 2000dps : 2^28
@@ -1695,20 +1697,20 @@ ICM_20948_Status_e ICM_20948::initializeDMP(
   result = writeDMPmems(GYRO_FULLSCALE, 4, &gyroFullScale[0]); if (result > worstResult) worstResult = result;
 
   // Configure the Accel Only Gain: 15252014 (225Hz) 30504029 (112Hz) 61117001 (56Hz)
-  //const unsigned char accelOnlyGain[4] = {0x03, 0xA4, 0x92, 0x49}; // 56Hz
-  const unsigned char accelOnlyGain[4] = {0x00, 0xE8, 0xBA, 0x2E}; // 225Hz
+  const unsigned char accelOnlyGain[4] = {0x03, 0xA4, 0x92, 0x49}; // 56Hz
+  //const unsigned char accelOnlyGain[4] = {0x00, 0xE8, 0xBA, 0x2E}; // 225Hz
   //const unsigned char accelOnlyGain[4] = {0x01, 0xD1, 0x74, 0x5D}; // 112Hz
   result = writeDMPmems(ACCEL_ONLY_GAIN, 4, &accelOnlyGain[0]); if (result > worstResult) worstResult = result;
 
   // Configure the Accel Alpha Var: 1026019965 (225Hz) 977872018 (112Hz) 882002213 (56Hz)
-  //const unsigned char accelAlphaVar[4] = {0x34, 0x92, 0x49, 0x25}; // 56Hz
-  const unsigned char accelAlphaVar[4] = {0x3D, 0x27, 0xD2, 0x7D}; // 225Hz
+  const unsigned char accelAlphaVar[4] = {0x34, 0x92, 0x49, 0x25}; // 56Hz
+  //const unsigned char accelAlphaVar[4] = {0x3D, 0x27, 0xD2, 0x7D}; // 225Hz
   //const unsigned char accelAlphaVar[4] = {0x3A, 0x49, 0x24, 0x92}; // 112Hz
   result = writeDMPmems(ACCEL_ALPHA_VAR, 4, &accelAlphaVar[0]); if (result > worstResult) worstResult = result;
 
   // Configure the Accel A Var: 47721859 (225Hz) 95869806 (112Hz) 191739611 (56Hz)
-  //const unsigned char accelAVar[4] = {0x0B, 0x6D, 0xB6, 0xDB}; // 56Hz
-  const unsigned char accelAVar[4] = {0x02, 0xD8, 0x2D, 0x83}; // 225Hz
+  const unsigned char accelAVar[4] = {0x0B, 0x6D, 0xB6, 0xDB}; // 56Hz
+  //const unsigned char accelAVar[4] = {0x02, 0xD8, 0x2D, 0x83}; // 225Hz
   //const unsigned char accelAVar[4] = {0x05, 0xB6, 0xDB, 0x6E}; // 112Hz
   result = writeDMPmems(ACCEL_A_VAR, 4, &accelAVar[0]); if (result > worstResult) worstResult = result;
 
@@ -1795,8 +1797,7 @@ ICM_20948_Status_e ICM_20948::startupMagnetometer(bool minimal)
     status = retval;
     return status;
   }
-
-  retval = i2cControllerConfigurePeripheral(0, MAG_AK09916_I2C_ADDR, AK09916_REG_ST1, 9, true, true, false, false, false);
+  retval = i2cControllerConfigurePeripheral(0, MAG_AK09916_I2C_ADDR, AK09916_REG_RSV2, 10, true, true, false, true, true);
   if (retval != ICM_20948_Stat_Ok)
   {
     debugPrint("ICM_20948::startupMagnetometer: i2cMasterConfigurePeripheral returned: ");
@@ -1805,6 +1806,10 @@ ICM_20948_Status_e ICM_20948::startupMagnetometer(bool minimal)
     status = retval;
     return status;
   }
+
+    debugPrint("ICM_20948::startupMagnetometer: writeMag returned: ");
+    debugPrintStatus(retval);
+    debugPrintln("");
 
   return status;
 }
@@ -1881,13 +1886,13 @@ ICM_20948_I2CDEV::ICM_20948_I2CDEV(int i2c_bus, int i2c_address): _i2c_wrapper(i
   _device._enabled_Android_1 = 0;      // Keep track of which Android sensors are enabled: 32-
   _device._enabled_Android_intr_0 = 0; // Keep track of which Android sensor interrupts are enabled: 0-31
   _device._enabled_Android_intr_1 = 0; // Keep track of which Android sensor interrupts are enabled: 32-  
-  status = startupDefault(_device._dmp_firmware_available);
-  if (status != ICM_20948_Stat_Ok)
-  {
-    debugPrint("ICM_20948_I2C::begin: startupDefault returned: ");
-    debugPrintStatus(status);
-    debugPrintln("");
-  }
+  // status = startupDefault(false);
+  // if (status != ICM_20948_Stat_Ok)
+  // {
+  //   debugPrint("ICM_20948_I2C::begin: startupDefault returned: ");
+  //   debugPrintStatus(status);
+  //   debugPrintln("");
+  // }
 
 }
 
