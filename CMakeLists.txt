@@ -53,3 +53,7 @@ install(DIRECTORY src/
   DESTINATION include/icm20948_i2cdev
   FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp"
 )
+
+# Build test example
+add_executable(test examples/PortableC/test.cpp)
+target_link_libraries(test PRIVATE icm20948_i2cdev)
